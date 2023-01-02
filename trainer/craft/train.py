@@ -461,7 +461,7 @@ def main():
 
     # Apply config to wandb
     if config["wandb_opt"]:
-        wandb.init(project="craft-stage2", entity="user_name", name=exp_name)
+        wandb.init(project="craft-stage2", name=exp_name)
         wandb.config.update(config)
 
     config = DotDict(config)

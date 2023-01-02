@@ -1,9 +1,10 @@
 wandb_opt: False
 
 results_dir: "./exp/"
-vis_test_dir: "./vis_result/"
+vis_test_dir: "./vis_result2/"
 
 data_root_dir: "./data_root_dir/"
+#data_root_dir: "/data/ICDAR2015/"
 score_gt_dir: None # "/data/ICDAR2015_official_supervision"
 mode: "weak_supervision"
 
@@ -14,22 +15,23 @@ train:
   synth_data_dir: "/data/SynthText/"
   synth_ratio: 5
   real_dataset: custom
-  ckpt_path: "./pretrained_model/CRAFT_clr_amp_29500.pth"
+#  ckpt_path: "./pretrained_model/CRAFT_clr_amp_29500.pth"
+  ckpt_path: "/nas/home/gmuffiness/workspace/ocr_related/daintlab-CRAFT-Reimplementation/clean-code/exp/syn_train_report2/CRAFT_clr_amp_50000.pth"
   eval_interval: 1000
-  batch_size: 5
+  batch_size: 20
   st_iter: 0
   end_iter: 25000
   lr: 0.0001
   lr_decay: 7500
   gamma: 0.2
   weight_decay: 0.00001
-  num_workers: 0 # On single gpu, train.py execution only works when num worker = 0 / On multi-gpu, you can set num_worker > 0 to speed up
+  num_workers: 4 # On single gpu, train.py execution only works when num worker = 0 / On multi-gpu, you can set num_worker > 0 to speed up
   amp: True
   loss: 2
   neg_rto: 0.3
   n_min_neg: 5000
   data:
-    vis_opt: False
+    vis_opt: True
     pseudo_vis_opt: False
     output_size: 768
     do_not_care_label: ['###', '']
@@ -71,7 +73,7 @@ train:
         max_angle: 20
         option: True
       random_crop:
-        version: "random_resize_crop"
+        version: "random_resize_crop_synth"
         scale: [0.03, 0.4]
         ratio: [0.75, 1.33]
         rnd_threshold: 1.0
@@ -83,13 +85,14 @@ train:
         contrast: 0.2
         saturation: 0.2
         hue: 0.2
-        option: True
+        option: False
 
 test:
   trained_model : null
   custom_data:
     test_set_size: 500
-    test_data_dir: "./data_root_dir/"
+#    test_data_dir: "./data_root_dir/"
+    test_data_dir: "/data/ICDAR2015/"
     text_threshold: 0.75
     low_text: 0.5
     link_threshold: 0.2

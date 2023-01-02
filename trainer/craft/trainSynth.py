@@ -13,7 +13,7 @@ import torch.optim as optim
 import wandb
 
 from config.load_config import load_yaml, DotDict
-from data.dataset import SynthTextDataSet
+from data.dataset import SynthTextDataSet, CustomDataset, CustomDataset2
 from loss.mseloss import Maploss_v2, Maploss_v3
 from model.craft import CRAFT
 from metrics.eval_det_iou import DetectionIoUEvaluator
@@ -32,9 +32,25 @@ class Trainer(object):
 
     def get_trn_loader(self):
 
-        dataset = SynthTextDataSet(
+        # dataset = SynthTextDataSet(
+        #     output_size=self.config.train.data.output_size,
+        #     data_dir=self.config.data_dir.synthtext,
+        #     saved_gt_dir=None,
+        #     mean=self.config.train.data.mean,
+        #     variance=self.config.train.data.variance,
+        #     gauss_init_size=self.config.train.data.gauss_init_size,
+        #     gauss_sigma=self.config.train.data.gauss_sigma,
+        #     enlarge_region=self.config.train.data.enlarge_region,
+        #     enlarge_affinity=self.config.train.data.enlarge_affinity,
+        #     aug=self.config.train.data.syn_aug,
+        #     vis_test_dir=self.config.vis_test_dir,
+        #     vis_opt=self.config.train.data.vis_opt,
+        #     sample=self.config.train.data.syn_sample,
+        # )
+
+        custom_dataset = CustomDataset2(
             output_size=self.config.train.data.output_size,
-            data_dir=self.config.data_dir.synthtext,
+            data_dir=self.config.data_root_dir,
             saved_gt_dir=None,
             mean=self.config.train.data.mean,
             variance=self.config.train.data.variance,
@@ -42,16 +58,16 @@ class Trainer(object):
             gauss_sigma=self.config.train.data.gauss_sigma,
             enlarge_region=self.config.train.data.enlarge_region,
             enlarge_affinity=self.config.train.data.enlarge_affinity,
-            aug=self.config.train.data.syn_aug,
+            aug=self.config.train.data.custom_aug,
             vis_test_dir=self.config.vis_test_dir,
+            sample=self.config.train.data.custom_sample,
             vis_opt=self.config.train.data.vis_opt,
-            sample=self.config.train.data.syn_sample,
         )
 
-        trn_sampler = torch.utils.data.distributed.DistributedSampler(dataset)
+        trn_sampler = torch.utils.data.distributed.DistributedSampler(custom_dataset)
 
         trn_loader = torch.utils.data.DataLoader(
-            dataset,
+            custom_dataset,
             batch_size=self.config.train.batch_size,
             shuffle=False,
             num_workers=self.config.train.num_workers,
@@ -84,7 +100,7 @@ class Trainer(object):
             raise Exception("Undefined loss")
         return criterion
 
-    def iou_eval(self, dataset, train_step, save_param_path, buffer, model):
+    def iou_eval(self, dataset, train_step, save_param_path, buffer, model, istrain):
         test_config = DotDict(self.config.test[dataset])
 
         val_result_dir = os.path.join(
@@ -102,6 +118,7 @@ class Trainer(object):
             buffer,
             model,
             self.mode,
+            istrain
         )
         if self.gpu == 0 and self.config.wandb_opt:
             wandb.log(
@@ -266,42 +283,57 @@ class Trainer(object):
 
                     # initialize all buffer value with zero
                     if self.gpu == 0:
-                        for buffer in buffer_dict.values():
-                            for i in range(len(buffer)):
-                                buffer[i] = None
+                        # for buffer in buffer_dict.values():
+                        #     for i in range(len(buffer)):
+                        #         buffer[i] = None
 
-                    print("Saving state, index:", train_step)
-                    save_param_dic = {
-                        "iter": train_step,
-                        "craft": craft.state_dict(),
-                        "optimizer": optimizer.state_dict(),
-                    }
-                    save_param_path = (
-                        self.config.results_dir
-                        + "/CRAFT_clr_"
-                        + repr(train_step)
-                        + ".pth"
-                    )
-
-                    if self.config.train.amp:
-                        save_param_dic["scaler"] = scaler.state_dict()
+                        print("Saving state, index:", train_step)
+                        save_param_dic = {
+                            "iter": train_step,
+                            "craft": craft.state_dict(),
+                            "optimizer": optimizer.state_dict(),
+                        }
                         save_param_path = (
                             self.config.results_dir
-                            + "/CRAFT_clr_amp_"
+                            + "/CRAFT_clr_"
                             + repr(train_step)
                             + ".pth"
                         )
 
-                    torch.save(save_param_dic, save_param_path)
+                        if self.config.train.amp:
+                            save_param_dic["scaler"] = scaler.state_dict()
+                            save_param_path = (
+                                self.config.results_dir
+                                + "/CRAFT_clr_amp_"
+                                + repr(train_step)
+                                + ".pth"
+                            )
 
-                    # validation
-                    self.iou_eval(
-                        "icdar2013",
-                        train_step,
-                        save_param_path,
-                        buffer_dict["icdar2013"],
-                        craft,
-                    )
+                        torch.save(save_param_dic, save_param_path)
+
+                        # validation
+                        self.iou_eval(
+                            "icdar2013",
+                            train_step,
+                            save_param_path,
+                            buffer_dict["icdar2013"],
+                            craft,
+                            False,
+                        )
+
+                    # if self.gpu == 0:
+                    #     for buffer in buffer_dict.values():
+                    #         for i in range(len(buffer)):
+                    #             buffer[i] = None
+                    #
+                    # self.iou_eval(
+                    #     "icdar2013",
+                    #     train_step,
+                    #     save_param_path,
+                    #     buffer_dict["custom_data"],
+                    #     craft,
+                    #     False,
+                    # )
 
                 train_step += 1
                 if train_step >= whole_training_step:
@@ -369,6 +401,7 @@ def main():
 
     manager = mp.Manager()
     buffer1 = manager.list([None] * config["test"]["icdar2013"]["test_set_size"])
+    # buffer2 = manager.list([None] * config["test"]["custom_data"]["test_set_size"])
     buffer_dict = {"icdar2013": buffer1}
     torch.multiprocessing.spawn(
         main_worker,

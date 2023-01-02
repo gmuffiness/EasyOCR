@@ -175,7 +175,7 @@ def overlay(image, region, affinity, single_img_bbox):
     return temp3
 
 
-def load_test_dataset_iou(test_folder_name, config):
+def load_test_dataset_iou(test_folder_name, config, istrain):
 
     if test_folder_name == "synthtext":
         total_bboxes_gt, total_img_path = load_synthtext_gt(config.test_data_dir)
@@ -192,7 +192,7 @@ def load_test_dataset_iou(test_folder_name, config):
 
     elif test_folder_name == "custom_data":
         total_bboxes_gt, total_img_path = load_icdar2015_gt(
-            dataFolder=config.test_data_dir
+            dataFolder=config.test_data_dir, isTraing=True
         )
 
     else:
@@ -224,12 +224,12 @@ def viz_test(img, pre_output, pre_box, gt_box, img_name, result_dir, test_folder
         print("not found test dataset")
 
 
-def main_eval(model_path, backbone, config, evaluator, result_dir, buffer, model, mode):
+def main_eval(model_path, backbone, config, evaluator, result_dir, buffer, model, mode, istrain):
 
     if not os.path.exists(result_dir):
         os.makedirs(result_dir, exist_ok=True)
 
-    total_imgs_bboxes_gt, total_imgs_path = load_test_dataset_iou("custom_data", config)
+    total_imgs_bboxes_gt, total_imgs_path = load_test_dataset_iou("custom_data", config, istrain)
 
     if mode == "weak_supervision" and torch.cuda.device_count() != 1:
         gpu_count = torch.cuda.device_count() // 2
@@ -256,29 +256,29 @@ def main_eval(model_path, backbone, config, evaluator, result_dir, buffer, model
             cudnn.benchmark = False
 
     # Distributed evaluation in the middle of training time
-    else:
-        if buffer is not None:
-            # check all buffer value is None for distributed evaluation
-            assert all(
-                v is None for v in buffer
-            ), "Buffer already filled with another value."
-        slice_idx = len(total_imgs_bboxes_gt) // gpu_count
-
-        # last gpu
-        if gpu_idx == gpu_count - 1:
-            piece_imgs_path = total_imgs_path[gpu_idx * slice_idx :]
-            # piece_imgs_bboxes_gt = total_imgs_bboxes_gt[gpu_idx * slice_idx:]
-        else:
-            piece_imgs_path = total_imgs_path[
-                gpu_idx * slice_idx : (gpu_idx + 1) * slice_idx
-            ]
-            # piece_imgs_bboxes_gt = total_imgs_bboxes_gt[gpu_idx * slice_idx: (gpu_idx + 1) * slice_idx]
+    # else:
+    #     if buffer is not None:
+    #         # check all buffer value is None for distributed evaluation
+    #         assert all(
+    #             v is None for v in buffer
+    #         ), "Buffer already filled with another value."
+    #     slice_idx = len(total_imgs_bboxes_gt) // gpu_count
+    #
+    #     # last gpu
+    #     if gpu_idx == gpu_count - 1:
+    #         piece_imgs_path = total_imgs_path[gpu_idx * slice_idx :]
+    #         # piece_imgs_bboxes_gt = total_imgs_bboxes_gt[gpu_idx * slice_idx:]
+    #     else:
+    #         piece_imgs_path = total_imgs_path[
+    #             gpu_idx * slice_idx : (gpu_idx + 1) * slice_idx
+    #         ]
+    #         # piece_imgs_bboxes_gt = total_imgs_bboxes_gt[gpu_idx * slice_idx: (gpu_idx + 1) * slice_idx]
 
     model.eval()
 
     # -----------------------------------------------------------------------------------------------------------------#
     total_imgs_bboxes_pre = []
-    for k, img_path in enumerate(tqdm(piece_imgs_path)):
+    for k, img_path in enumerate(tqdm(total_imgs_path)):
         image = cv2.imread(img_path)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         single_img_bbox = []
@@ -299,8 +299,8 @@ def main_eval(model_path, backbone, config, evaluator, result_dir, buffer, model
             single_img_bbox.append(box_info)
         total_imgs_bboxes_pre.append(single_img_bbox)
         # Distributed evaluation -------------------------------------------------------------------------------------#
-        if buffer is not None:
-            buffer[gpu_idx * slice_idx + k] = single_img_bbox
+        # if buffer is not None:
+        #     buffer[gpu_idx * slice_idx + k] = single_img_bbox
         # print(sum([element is not None for element in buffer]))
         # -------------------------------------------------------------------------------------------------------------#
 
@@ -316,11 +316,11 @@ def main_eval(model_path, backbone, config, evaluator, result_dir, buffer, model
             )
 
     # When distributed evaluation mode, wait until buffer is full filled
-    if buffer is not None:
-        while None in buffer:
-            continue
-        assert all(v is not None for v in buffer), "Buffer not filled"
-        total_imgs_bboxes_pre = buffer
+    # if buffer is not None:
+    #     while None in buffer:
+    #         continue
+    #     assert all(v is not None for v in buffer), "Buffer not filled"
+    #     total_imgs_bboxes_pre = buffer
 
     results = []
     for i, (gt, pred) in enumerate(zip(total_imgs_bboxes_gt, total_imgs_bboxes_pre)):
@@ -346,6 +346,7 @@ def cal_eval(config, data, res_dir_name, opt, mode):
             buffer=None,
             model=None,
             mode=mode,
+            istrain=False,
         )
     else:
         print("Undefined evaluation")
@@ -357,7 +358,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--yaml",
         "--yaml_file_name",
-        default="custom_data_train",
+        default="syn_train",
         type=str,
         help="Load configuration",
     )
@@ -374,7 +375,7 @@ if __name__ == "__main__":
     val_result_dir_name = args.yaml
     cal_eval(
         config,
-        "custom_data",
+        "icdar2013",
         val_result_dir_name + "-ic15-iou",
         opt="iou_eval",
         mode=None,

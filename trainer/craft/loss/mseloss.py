@@ -92,7 +92,7 @@ class Maploss_v2(nn.Module):
         affi_loss = self.batch_image_loss(
             loss_affinity, affinity_socres_label, neg_rto, n_min_neg
         )
-        return char_loss + affi_loss
+        return char_loss
 
 
 class Maploss_v3(nn.Module):
@@ -169,4 +169,4 @@ class Maploss_v3(nn.Module):
             loss_affinity, affinity_scores_label, neg_rto, n_min_neg
         )
 
-        return char_loss + affi_loss
+        return char_loss
